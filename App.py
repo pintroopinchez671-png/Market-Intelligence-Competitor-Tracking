@@ -15,7 +15,7 @@ STORAGE_DIR = "snapshots"
 if not os.path.exists(STORAGE_DIR):
     os.makedirs(STORAGE_DIR)
 
-# 3. Helper Function
+# 3. Helper Functions
 def sanitize_html(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     for element in soup(['script', 'style', 'iframe', 'noscript', 'svg']):
@@ -24,22 +24,31 @@ def sanitize_html(html_content):
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     return "\n".join(lines)
 
+def clean_input(text):
+    if not text:
+        return ""
+    # Strip whitespace, zero-width spaces, and quotes
+    return text.strip().strip('\u200b\u200c\u200d\ufeff\'"')
+
 # 4. Sidebar Form Controls
 st.sidebar.header("Add Competitor")
-comp_name = st.sidebar.text_input("Competitor Name", placeholder="e.g. Stripe", key="input_name")
-comp_url = st.sidebar.text_input("Page URL", placeholder="https://example.com/pricing", key="input_url")
-comp_id = st.sidebar.text_input("Tracker ID", placeholder="e.g. stripe-pricing", key="input_id")
+comp_name = clean_input(st.sidebar.text_input("Competitor Name", placeholder="e.g. Stripe", key="input_name"))
+comp_url = clean_input(st.sidebar.text_input("Page URL", placeholder="https://example.com/pricing", key="input_url"))
+comp_id = clean_input(st.sidebar.text_input("Tracker ID", placeholder="e.g. stripe-pricing", key="input_id"))
 
 # 5. Tracker Execution
 if st.sidebar.button("Run Tracker", key="btn_run"):
     if not comp_url or not comp_id:
         st.sidebar.error("Please provide both a URL and a Tracker ID.")
+    elif not (comp_url.startswith("http://") or comp_url.startswith("https://")):
+        st.sidebar.error("URL must start with http:// or https://")
     else:
         st.info(f"Fetching latest data from: {comp_url}")
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         
         try:
             response = requests.get(comp_url, headers=headers, timeout=10)
+            response.raise_for_status()
             current_text = sanitize_html(response.text)
             snapshot_file = os.path.join(STORAGE_DIR, f"{comp_id}.txt")
 
@@ -86,4 +95,3 @@ if snapshots:
     st.write(f"Active tracked pages: `{', '.join(snapshots)}`")
 else:
     st.write("No saved page baselines found.")
-
