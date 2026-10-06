@@ -1,6 +1,9 @@
 import os
 import difflib
 import requests
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from bs4 import BeautifulSoup
 import streamlit as st
 
@@ -27,8 +30,43 @@ def sanitize_html(html_content):
 def clean_input(text):
     if not text:
         return ""
-    # Strip whitespace, zero-width spaces, and quotes
-    return text.strip().strip('\u200b\u200c\u200d\ufeff\'"')
+    text = text.strip().strip('\u200b\u200c\u200d\ufeff\'"')
+    if text.startswith("[") and "](" in text and text.endswith(")"):
+        text = text.split("](")[-1].rstrip(")")
+    return text
+
+def send_email_alert(comp_name, url, added_list, removed_list):
+    try:
+        secrets = st.secrets["email"]
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"🚨 Competitor Alert: Changes detected on {comp_name}"
+        msg["From"] = secrets["sender_email"]
+        msg["To"] = secrets["receiver_email"]
+
+        added_str = "\n".join([f"+ {line}" for line in added_list]) if added_list else "None"
+        removed_str = "\n".join([f"- {line}" for line in removed_list]) if removed_list else "None"
+
+        body = f"""
+        Competitor Page Tracker Alert
+
+        Target: {comp_name} ({url})
+
+        --- ADDED CONTENT ---
+        {added_str}
+
+        --- REMOVED CONTENT ---
+        {removed_str}
+        """
+        
+        msg.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP_SSL(secrets["smtp_server"], secrets["smtp_port"]) as server:
+            server.login(secrets["sender_email"], secrets["sender_password"])
+            server.sendmail(secrets["sender_email"], secrets["receiver_email"], msg.as_string())
+        
+        st.toast("📧 Email alert sent successfully!")
+    except Exception as e:
+        st.error(f"Failed to send email alert: {e}")
 
 # 4. Sidebar Form Controls
 st.sidebar.header("Add Competitor")
@@ -79,6 +117,9 @@ if st.sidebar.button("Run Tracker", key="btn_run"):
                     with col2:
                         st.subheader("🔴 Removed Content")
                         st.code("\n".join(removed) if removed else "None")
+
+                    # Dispatch email alert on detected changes
+                    send_email_alert(comp_name or comp_id, comp_url, added, removed)
 
                     with open(snapshot_file, 'w', encoding='utf-8') as f:
                         f.write(current_text)
